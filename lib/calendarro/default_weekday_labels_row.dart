@@ -1,18 +1,24 @@
 import 'package:flutter/widgets.dart';
 
-class CalendarroWeekdayLabelsView extends StatelessWidget {
+class CalendarWeekdayLabelsView extends StatelessWidget {
+  const CalendarWeekdayLabelsView({Key? key, required this.height}) : super(key: key);
+
+  final double height;
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(child: Text("Mon", textAlign: TextAlign.center)),
-        Expanded(child: Text("Tue", textAlign: TextAlign.center)),
-        Expanded(child: Text("Wed", textAlign: TextAlign.center)),
-        Expanded(child: Text("Thu", textAlign: TextAlign.center)),
-        Expanded(child: Text("Fri", textAlign: TextAlign.center)),
-        Expanded(child: Text("Sat", textAlign: TextAlign.center)),
-        Expanded(child: Text("Sun", textAlign: TextAlign.center)),
-      ],
+    return SizedBox(
+      height: height,
+      child: Row(
+        children: const <Widget>[
+          Expanded(child: Text("月", textAlign: TextAlign.center)),
+          Expanded(child: Text("火", textAlign: TextAlign.center)),
+          Expanded(child: Text("水", textAlign: TextAlign.center)),
+          Expanded(child: Text("木", textAlign: TextAlign.center)),
+          Expanded(child: Text("金", textAlign: TextAlign.center)),
+          Expanded(child: Text("土", textAlign: TextAlign.center)),
+          Expanded(child: Text("日", textAlign: TextAlign.center)),
+        ],
+      ),
     );
   }
 }

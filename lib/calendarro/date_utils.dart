@@ -94,7 +94,6 @@ class DateUtils {
   }
 
   static bool isDayOfMonth(DateTime date, DateTime dayOfMonth) {
-    print("thanh_month: $dayOfMonth");
     return  date.month == dayOfMonth.month && date.year == dayOfMonth.year;
   }
 

@@ -1,285 +1,144 @@
 library calendarro;
 
-import 'package:demo_calendar/calendarro/calendarro_page.dart';
 import 'package:demo_calendar/calendarro/date_range.dart';
 import 'package:demo_calendar/calendarro/default_weekday_labels_row.dart';
 import 'package:demo_calendar/calendarro/date_utils.dart';
-import 'package:demo_calendar/calendarro/default_day_tile_builder.dart';
 import 'package:flutter/material.dart' hide DateUtils;
+import 'package:intl/intl.dart';
 
-abstract class DayTileBuilder {
-  Widget build(BuildContext context, DateTime date, DateTime month, DateTimeCallback? onTap);
-}
+typedef DateTimeCallback = void Function(DateTime datetime);
+typedef CurrentPageCallback = void Function(DateTime pageStartDate, DateTime pageEndDate);
 
-enum DisplayMode { MONTHS, WEEKS }
-enum SelectionMode { SINGLE, MULTI, RANGE }
+class Calendar extends StatefulWidget {
+  final DateTime startDate;
+  final DateTime endDate;
+  final DateTimeCallback? onTap;
+  final CurrentPageCallback? onPageSelected;
+  final DateTime? selectedSingleDate;
+  final List<DateTime> selectedDates;
+  late final int startDayOffset;
+  final double dayLabelHeight;
+  final double monthLabelHeight;
 
-typedef void DateTimeCallback(DateTime datetime);
-typedef void CurrentPageCallback(DateTime pageStartDate, DateTime pageEndDate);
-
-class Calendarro extends StatefulWidget {
-  DateTime startDate;
-  DateTime endDate;
-  DisplayMode displayMode;
-  SelectionMode selectionMode;
-  DayTileBuilder dayTileBuilder;
-  Widget weekdayLabelsRow;
-  DateTimeCallback? onTap;
-  CurrentPageCallback? onPageSelected;
-
-  DateTime? selectedSingleDate;
-  List<DateTime> selectedDates;
-
-  int startDayOffset = 0;
-  CalendarroState? state;
-
-  double dayTileHeight = 40.0;
-  double dayLabelHeight = 20.0;
-
-  Calendarro({
+  Calendar({
     Key? key,
     DateTime? startDate,
     DateTime? endDate,
-    this.displayMode = DisplayMode.WEEKS,
-    DayTileBuilder? dayTileBuilder,
-    this.selectedSingleDate,
     List<DateTime>? selectedDates,
-    this.selectionMode = SelectionMode.SINGLE,
+    this.selectedSingleDate,
     this.onTap,
     this.onPageSelected,
-    Widget? weekdayLabelsRow,
-  }) :
-        this.startDate = DateUtils.toMidnight(startDate ?? DateUtils.getFirstDayOfCurrentMonth()),
-        this.endDate = DateUtils.toMidnight(endDate ?? DateUtils.getLastDayOfCurrentMonth()),
-        this.dayTileBuilder = dayTileBuilder ?? DefaultDayTileBuilder(),
-        this.weekdayLabelsRow = weekdayLabelsRow ??CalendarroWeekdayLabelsView(),
-        this.selectedDates = selectedDates ?? [],
+    this.dayLabelHeight = 50.0,
+    this.monthLabelHeight = 50.0,
+  })  :
+        startDate = DateUtils.toMidnight(startDate ?? DateUtils.getFirstDayOfCurrentMonth()),
+        endDate = DateUtils.toMidnight(endDate ?? DateUtils.getLastDayOfCurrentMonth()),
+        selectedDates = selectedDates ?? [],
         super(key: key) {
     startDayOffset = this.startDate.weekday - DateTime.monday;
-
     if (this.startDate.isAfter(this.endDate)) {
-      throw new ArgumentError("Calendarro: startDate is after the endDate");
+      throw ArgumentError("Calendarro: startDate is after the endDate");
     }
   }
-
-  static CalendarroState? of(BuildContext context) =>
-      context.findAncestorStateOfType<CalendarroState>();
 
   @override
-  CalendarroState createState() {
-    state = CalendarroState(
-        selectedSingleDate: selectedSingleDate,
-        selectedDates: selectedDates);
-    return state!;
-  }
+  CalendarState createState() => CalendarState();
 
-  void setSelectedDate(DateTime date) {
-    state?.setSelectedDate(date);
-  }
-
-  void toggleDate(DateTime date) {
-    state?.toggleDateSelection(date);
-  }
-
-  void setCurrentDate(DateTime date) {
-    state?.setCurrentDate(date);
-  }
-
-  int getPositionOfDate(DateTime date) {
-    final start = startDate;
-    if (start == null) {
-      throw StateError('startDate is null');
-    }
-    int daysDifference =
-        date
-            .difference(DateUtils.toMidnight(start))
-            .inDays;
-    int weekendsDifference = ((daysDifference + start.weekday) / 7).toInt();
-    var position = daysDifference - weekendsDifference * 2;
-    return position;
-  }
-
-  int getPageForDate(DateTime date) {
-    if (displayMode == DisplayMode.WEEKS) {
-      int daysDifferenceFromStartDate = date
-          .difference(startDate)
-          .inDays;
-      int page = (daysDifferenceFromStartDate + startDayOffset) ~/ 7;
-      return page;
-    } else {
-      var monthDifference = (date.year * 12 + date.month) -
-          (startDate.year * 12 + startDate.month);
-      return monthDifference;
-    }
-  }
+  int getPageForDate(DateTime date) => (date.year * 12 + date.month) - (startDate.year * 12 + startDate.month);
 }
 
-class CalendarroState extends State<Calendarro> {
-  DateTime? selectedSingleDate;
-  List<DateTime> selectedDates;
-
-  int? pagesCount;
-  PageView? pageView;
-
-  CalendarroState({
-    this.selectedSingleDate,
-    required this.selectedDates
-  });
+class CalendarState extends State<Calendar> {
+  DateTime? _selectedSingleDate;
+  late double _availableHeight;
+  int _maxWeeksNumber = 5;
+  int? _pagesCount;
+  PageView? _pageView;
+  late DateTime _month;
 
   @override
   void initState() {
     super.initState();
-    selectedSingleDate ??= widget.startDate;
+    _month = widget.startDate;
+    _selectedSingleDate ??= widget.startDate;
   }
 
   void setSelectedDate(DateTime date) {
-    setState(() {
-      switch (widget.selectionMode) {
-        case SelectionMode.SINGLE:
-          selectedSingleDate = date;
-          break;
-        case SelectionMode.MULTI:
-          _setMultiSelectedDate(date);
-          break;
-        case SelectionMode.RANGE:
-          _setRangeSelectedDate(date);
-          break;
-      }
-    });
+    final alreadyExistingDate = widget.selectedDates.firstWhereOrNull((currentDate) =>
+        DateUtils.isSameDay(currentDate, date));
+    if (alreadyExistingDate != null) {
+      widget.selectedDates.remove(alreadyExistingDate);
+    } else {
+      widget.selectedDates.add(date);
+    }
   }
 
   void setCurrentDate(DateTime date) {
     setState(() {
       int page = widget.getPageForDate(date);
-      pageView?.controller.jumpToPage(page);
+      _pageView?.controller.jumpToPage(page);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.displayMode == DisplayMode.WEEKS) {
-      int lastPage = widget.getPageForDate(widget.endDate);
-      pagesCount = lastPage + 1;
-    } else {
-      pagesCount = DateUtils.calculateMonthsDifference(
-          widget.startDate,
-          widget.endDate) + 1;
-    }
-
-    final selectedDate = selectedSingleDate;
-    pageView = PageView.builder(
-      itemBuilder: (context, position) => _buildCalendarPage(position),
-      itemCount: pagesCount,
+    _pagesCount = DateUtils.calculateMonthsDifference(widget.startDate, widget.endDate) + 1;
+    final selectedDate = _selectedSingleDate;
+    _pageView = PageView.builder(
+      itemBuilder: (context, position) => Column(
+        children: [
+          _Month(date: _month, height: widget.monthLabelHeight),
+          _buildCalendarPageInMonthsMode(position),
+        ],
+      ),
+      itemCount: _pagesCount,
       controller: PageController(
           initialPage:
           selectedDate != null ? widget.getPageForDate(selectedDate) : 0),
       onPageChanged: (page) {
         if (widget.onPageSelected != null) {
-          DateRange pageDateRange = _calculatePageDateRange(page);
+          DateRange pageDateRange = _calculatePageDateRangeInMonthsMode(page);
           widget.onPageSelected?.call(pageDateRange.startDate, pageDateRange.endDate);
+          setState(() {
+            _month = pageDateRange.startDate;
+          });
         }
       },
     );
 
-    double widgetHeight;
-    if (widget.displayMode == DisplayMode.WEEKS) {
-      widgetHeight = widget.dayLabelHeight + widget.dayTileHeight;
-    } else {
-      var maxWeeksNumber = DateUtils.calculateMaxWeeksNumberMonthly(
-          widget.startDate,
-          widget.endDate);
-      widgetHeight = widget.dayLabelHeight
-          + maxWeeksNumber * widget.dayTileHeight;
-    }
-
+     _availableHeight = MediaQuery.of(context).size.height -
+        AppBar().preferredSize.height -
+        widget.dayLabelHeight -
+        MediaQuery.of(context).padding.top -
+        MediaQuery.of(context).padding.bottom;
+     _maxWeeksNumber = DateUtils.calculateMaxWeeksNumberMonthly(
+        widget.startDate,
+        widget.endDate,
+     );
     return Container(
-        height: widgetHeight,
-        child: pageView);
-  }
-
-  bool isDateSelected(DateTime date) {
-    switch (widget.selectionMode) {
-      case SelectionMode.SINGLE:
-        final selectedDate = selectedSingleDate;
-        return selectedDate == null
-            ? false
-            : DateUtils.isSameDay(selectedDate, date);
-      case SelectionMode.MULTI:
-        final matchedSelectedDate = selectedDates.firstWhereOrNull(
-                (currentDate) => DateUtils.isSameDay(currentDate, date));
-
-        return matchedSelectedDate != null;
-      case SelectionMode.RANGE:
-        switch (selectedDates.length) {
-          case 0:
-            return false;
-          case 1:
-            return DateUtils.isSameDay(selectedDates[0], date);
-          default:
-            var dateBetweenDatesRange = (date.isAfter(selectedDates[0])
-                && date.isBefore(selectedDates[1]));
-            return DateUtils.isSameDay(date, selectedDates[0])
-              || DateUtils.isSameDay(date, selectedDates[1])
-              || dateBetweenDatesRange;
-        }
-        break;
-    }
-  }
-
-  void toggleDateSelection(DateTime date) {
-    setState(() {
-      for (var i = selectedDates.length - 1; i >= 0; i--) {
-        if (DateUtils.isSameDay(selectedDates[i], date)) {
-          selectedDates.removeAt(i);
-          return;
-        }
-      }
-
-      selectedDates.add(date);
-    });
-  }
-
-  void update() {
-    setState(() {});
-  }
-
-  Widget _buildCalendarPage(int position) {
-    if (widget.displayMode == DisplayMode.WEEKS) {
-      return _buildCalendarPageInWeeksMode(position);
-    } else {
-      return _buildCalendarPageInMonthsMode(position);
-    }
-  }
-
-  Widget _buildCalendarPageInWeeksMode(int position) {
-    DateRange pageDateRange = _calculatePageDateRange(position);
-
-    return CalendarroPage(
-        pageStartDate: pageDateRange.startDate,
-        pageEndDate: pageDateRange.endDate,
-        weekdayLabelsRow: widget.weekdayLabelsRow);
+      color: Colors.blueGrey,
+      height: _availableHeight,
+      child: _pageView,
+    );
   }
 
   Widget _buildCalendarPageInMonthsMode(int position) {
     DateRange pageDateRange = _calculatePageDateRangeInMonthsMode(position);
-
-    return CalendarroPage(
+    return _CalendarPage(
       pageStartDate: pageDateRange.startDate,
       pageEndDate: pageDateRange.endDate,
-      weekdayLabelsRow: widget.weekdayLabelsRow,
+      weekdayLabelsRow: CalendarWeekdayLabelsView(height: widget.dayLabelHeight),
+      dayItemHeight: (_availableHeight - widget.dayLabelHeight - widget.monthLabelHeight)/_maxWeeksNumber,
+      selectedDates: widget.selectedDates,
+      onTap: (date) {
+        widget.onTap?.call(date);
+        setSelectedDate(date);
+        setCurrentDate(date);
+      },
     );
   }
 
-  DateRange _calculatePageDateRange(int pagePosition) {
-    if (widget.displayMode == DisplayMode.WEEKS) {
-      return _calculatePageDateRangeInWeeksMode(pagePosition);
-    } else {
-      return _calculatePageDateRangeInMonthsMode(pagePosition);
-    }
-  }
-
   DateRange _calculatePageDateRangeInMonthsMode(int pagePosition) {
-    final count = pagesCount;
+    final count = _pagesCount;
     if (count == null) {
       throw StateError('pagesCount is null');
     }
@@ -308,65 +167,210 @@ class CalendarroState extends State<Calendarro> {
 
     return DateRange(pageStartDate, pageEndDate);
   }
+}
 
-  DateRange _calculatePageDateRangeInWeeksMode(int pagePosition) {
-    final count = pagesCount;
-    if (count == null) {
-      throw StateError('pagesCount is null');
-    }
+class _CalendarPage extends StatelessWidget {
+  static const maxRowsCount = 6;
 
-    DateTime pageStartDate;
-    DateTime pageEndDate;
+  final DateTime pageStartDate;
+  final DateTime pageEndDate;
+  final Widget weekdayLabelsRow;
 
-    if (pagePosition == 0) {
-      pageStartDate = widget.startDate;
-      pageEndDate =
-          DateUtils.addDaysToDate(widget.startDate, 6 - widget.startDayOffset);
-    } else if (pagePosition == count - 1) {
-      pageStartDate = DateUtils.addDaysToDate(
-          widget.startDate, 7 * pagePosition - widget.startDayOffset);
-      pageEndDate = widget.endDate;
-    } else {
-      pageStartDate = DateUtils.addDaysToDate(
-          widget.startDate, 7 * pagePosition - widget.startDayOffset);
-      pageEndDate = DateUtils.addDaysToDate(
-          widget.startDate, 7 * pagePosition + 6 - widget.startDayOffset);
-    }
+  final int startDayOffset;
+  final double dayItemHeight;
+  final List<DateTime> selectedDates;
+  final DateTimeCallback? onTap;
 
-    return DateRange(pageStartDate, pageEndDate);
+  _CalendarPage({
+    Key? key,
+    required this.pageStartDate,
+    required this.pageEndDate,
+    required this.weekdayLabelsRow,
+    required this.dayItemHeight,
+    required this.selectedDates,
+    this.onTap,
+  }) : startDayOffset = pageStartDate.weekday - DateTime.monday, super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+        color: Colors.blueGrey,
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: buildRows(
+                dayItemHeight: dayItemHeight,
+                selectedDates: selectedDates,
+                onTap: onTap,
+            ),
+        ),
+    );
   }
 
-  void _setRangeSelectedDate(DateTime date) {
-    switch (selectedDates.length) {
-      case 0:
-        selectedDates.add(date);
-        break;
-      case 1:
-        var firstDate = selectedDates[0];
-        if (firstDate.isBefore(date)) {
-          selectedDates.add(date);
-        } else {
-          selectedDates.clear();
-          selectedDates.add(date);
-          selectedDates.add(firstDate);
+  List<Widget> buildRows({
+    required double dayItemHeight,
+    required List<DateTime> selectedDates,
+    DateTimeCallback? onTap,
+  }) {
+    List<Widget> rows = [];
+    rows.add(weekdayLabelsRow);
+
+    DateTime rowLastDayDate = DateUtils.addDaysToDate(pageStartDate, 6 - startDayOffset);
+
+    if (pageEndDate.isAfter(rowLastDayDate)) {
+      rows.add(Row(
+          children: buildCalendarRow(
+        rowStartDate: pageStartDate.add(Duration(days: -startDayOffset)),
+        rowEndDate: rowLastDayDate,
+        dayItemHeight: dayItemHeight,
+        selectedDates: selectedDates,
+        onTap: onTap,
+      )));
+
+      for (var i = 1; i < maxRowsCount; i++) {
+        DateTime nextRowFirstDayDate = DateUtils.addDaysToDate(pageStartDate, 7 * i - startDayOffset);
+        if (nextRowFirstDayDate.isAfter(pageEndDate)) {
+          break;
         }
-        break;
-      default:
-        selectedDates.clear();
-        selectedDates.add(date);
-        break;
+        DateTime nextRowLastDayDate = DateUtils.addDaysToDate(pageStartDate, 7 * i - startDayOffset + 6);
+        rows.add(Row(
+            children: buildCalendarRow(
+          rowStartDate: nextRowFirstDayDate,
+          rowEndDate: nextRowLastDayDate,
+          dayItemHeight: dayItemHeight,
+          selectedDates: selectedDates,
+          onTap: onTap,
+        )));
+      }
+    } else {
+      rows.add(Row(children: buildCalendarRow(
+        rowStartDate: pageStartDate,
+        rowEndDate: pageEndDate,
+        dayItemHeight: dayItemHeight,
+        selectedDates: selectedDates,
+        onTap: onTap,
+      )));
     }
+    return rows;
   }
 
-  void _setMultiSelectedDate(DateTime date) {
-    final alreadyExistingDate = selectedDates.firstWhereOrNull((currentDate) =>
-        DateUtils.isSameDay(currentDate, date));
-
-    if (alreadyExistingDate != null) {
-      selectedDates.remove(alreadyExistingDate);
-    } else {
-      selectedDates.add(date);
+  List<Widget> buildCalendarRow({
+    required DateTime rowStartDate,
+    required DateTime rowEndDate,
+    required double dayItemHeight,
+    required List<DateTime> selectedDates,
+    DateTimeCallback? onTap,
+  }) {
+    List<Widget> items = [];
+    DateTime currentDate = rowStartDate;
+    for (int i = 0; i < 7; i++) {
+      if (i + 1 >= rowStartDate.weekday && i + 1 <= rowEndDate.weekday)  {
+        Widget dayTile = _CalendarDayItem(
+          selectedDates: selectedDates,
+          height: dayItemHeight,
+          date: currentDate,
+          month: pageStartDate,
+          onTap: onTap,
+        );
+        items.add(dayTile);
+        currentDate = currentDate.add(const Duration(days: 1));
+      }
     }
+    return items;
+  }
+}
+
+class _Month extends StatelessWidget {
+  const _Month({
+    required this.date,
+    required this.height,
+  });
+
+  final DateTime date;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.centerLeft,
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      child: Text(
+        // DateFormat.yMMM('ja').format(date),
+        '$date',
+        textAlign: TextAlign.start,
+        style: const TextStyle(fontSize: 15),
+      ),
+    );
+  }
+}
+
+class _CalendarDayItem extends StatelessWidget {
+  const _CalendarDayItem({
+    required this.selectedDates,
+    required this.date,
+    required this.month,
+    required this.height,
+    this.onTap,
+  });
+
+  final DateTime date;
+  final DateTime month;
+  final List<DateTime> selectedDates;
+  final DateTimeCallback? onTap;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    bool isCurrentMonth = DateUtils.isDayOfMonth(date, month);
+    var textColor = isCurrentMonth ? Colors.black : Colors.grey;
+    var backgroundColor = isCurrentMonth ? Colors.white : Colors.amberAccent;
+
+    bool daySelected = _isDateSelected(date);
+
+    BoxDecoration? boxDecoration;
+    if (daySelected) {
+      boxDecoration = BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.blue,
+          border: Border.all(
+            color: Colors.blueGrey,
+            width: 4.0,
+          ),
+          shape: BoxShape.rectangle);
+    } else {
+      boxDecoration = BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: backgroundColor,
+          border: Border.all(
+            color: Colors.blueGrey,
+            width: 4.0,
+          ),
+          shape: BoxShape.rectangle);
+    }
+
+    return Expanded(
+        child: GestureDetector(
+          onTap: handleTap,
+          behavior: HitTestBehavior.translucent,
+          child: Container(
+              height: height,
+              decoration: boxDecoration,
+              child: Center(
+                  child: Text(
+                    "${date.day} \n 通常営業",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: textColor),
+                  ))),
+        ));
+  }
+
+  void handleTap() {
+    if (!DateUtils.isDayOfMonth(date, month)) return;
+    onTap?.call(date);
+  }
+
+  bool _isDateSelected(DateTime date) {
+    final matchedSelectedDate = selectedDates.firstWhereOrNull((currentDate) => DateUtils.isSameDay(currentDate, date));
+    return matchedSelectedDate != null;
   }
 }
 
