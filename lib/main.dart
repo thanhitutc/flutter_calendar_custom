@@ -30,6 +30,9 @@ class MyHomePage extends StatelessWidget {
     final monthCalendarro = Calendar(
         startDate: startDate,
         endDate: endDate,
+        onMonthSelected: (startDate, endDate) => {
+          print('thanh_callback =>>>>>>>>>>==== $startDate - $endDate')
+        },
         onTap: (date) {
           print("onTap: $date");
         });
@@ -38,14 +41,10 @@ class MyHomePage extends StatelessWidget {
         title: Text(title),
       ),
       body: Container(
-        color: Colors.blueGrey,
+        color: Colors.yellow,
         height: MediaQuery.of(context).size.height,
-        child: Column(
-          children: <Widget>[
-            // Container(height: 100.0),
-            monthCalendarro
-          ],
-        ),
+        width: MediaQuery.of(context).size.width,
+        child: monthCalendarro,
       ),
     );
   }

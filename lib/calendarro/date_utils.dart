@@ -19,10 +19,8 @@ class DateUtils {
 
   static DateTime addDaysToDate(DateTime date, int days) {
     DateTime newDate = date.add(Duration(days: days));
-
     if (date.hour != newDate.hour) {
       var hoursDifference = date.hour - newDate.hour;
-
       if (hoursDifference <= 3 && hoursDifference >= -3) {
         newDate = newDate.add(Duration(hours: hoursDifference));
       } else if (hoursDifference <= -21) {
@@ -30,7 +28,6 @@ class DateUtils {
       } else if (hoursDifference >= 21) {
         newDate = newDate.add(Duration(hours: hoursDifference - 24));
       }
-
     }
     return newDate;
   }
@@ -45,19 +42,26 @@ class DateUtils {
     return dateTime;
   }
 
-  static DateTime getFirstDayOfNextMonth() {
-    var dateTime = getFirstDayOfCurrentMonth();
-    dateTime = addDaysToDate(dateTime, 31);
-    dateTime = getFirstDayOfMonth(dateTime);
+  static DateTime getFirstDayOfPreviousMonth(DateTime dateTime) {
+    final previousMonth = getFirstDayOfMonth(dateTime).add(const Duration(days: -1));
+    dateTime = getFirstDayOfMonth(previousMonth);
     return dateTime;
+  }
+
+  static DateTime getLastDayOfPreviousMonth(DateTime dateTime) {
+    return getFirstDayOfMonth(dateTime).add(const Duration(days: -1));
+  }
+
+  static DateTime getFirstDayOfNextMonth(DateTime dateTime) {
+    return getLastDayOfMonth(dateTime).add(const Duration(days: 1));
+  }
+
+  static DateTime getLastDayOfNextMonth(DateTime dateTime) {
+    return getLastDayOfMonth(getFirstDayOfNextMonth(dateTime));
   }
 
   static DateTime getLastDayOfCurrentMonth() {
     return getLastDayOfMonth(DateTime.now());
-  }
-
-  static DateTime getLastDayOfNextMonth() {
-    return getLastDayOfMonth(getFirstDayOfNextMonth());
   }
 
   static DateTime addMonths(DateTime fromMonth, int months) {
@@ -77,9 +81,9 @@ class DateUtils {
   
   static DateTime getLastDayOfMonth(DateTime month) {
     DateTime firstDayOfMonth = DateTime(month.year, month.month);
-    DateTime nextMonth = firstDayOfMonth.add(Duration(days: 32));
+    DateTime nextMonth = firstDayOfMonth.add(const Duration(days: 32));
     DateTime firstDayOfNextMonth = DateTime(nextMonth.year, nextMonth.month);
-    return firstDayOfNextMonth.subtract(Duration(days: 1));
+    return firstDayOfNextMonth.subtract(const Duration(days: 1));
   }
 
   static bool isSameDay(DateTime date1, DateTime date2) {

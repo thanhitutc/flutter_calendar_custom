@@ -1,24 +1,24 @@
 library calendarro;
 
-import 'package:demo_calendar/calendarro/date_range.dart';
 import 'package:demo_calendar/calendarro/default_weekday_labels_row.dart';
 import 'package:demo_calendar/calendarro/date_utils.dart';
 import 'package:flutter/material.dart' hide DateUtils;
 import 'package:intl/intl.dart';
 
 typedef DateTimeCallback = void Function(DateTime datetime);
-typedef CurrentPageCallback = void Function(DateTime pageStartDate, DateTime pageEndDate);
+typedef MonthSelectedCallback = void Function(DateTime pageStartDate, DateTime pageEndDate);
 
 class Calendar extends StatefulWidget {
   final DateTime startDate;
   final DateTime endDate;
   final DateTimeCallback? onTap;
-  final CurrentPageCallback? onPageSelected;
+  final MonthSelectedCallback? onMonthSelected;
   final DateTime? selectedSingleDate;
   final List<DateTime> selectedDates;
   late final int startDayOffset;
   final double dayLabelHeight;
   final double monthLabelHeight;
+  final double navigationButtonWidth;
 
   Calendar({
     Key? key,
@@ -27,9 +27,10 @@ class Calendar extends StatefulWidget {
     List<DateTime>? selectedDates,
     this.selectedSingleDate,
     this.onTap,
-    this.onPageSelected,
+    this.onMonthSelected,
     this.dayLabelHeight = 50.0,
     this.monthLabelHeight = 50.0,
+    this.navigationButtonWidth = 50.0,
   })  :
         startDate = DateUtils.toMidnight(startDate ?? DateUtils.getFirstDayOfCurrentMonth()),
         endDate = DateUtils.toMidnight(endDate ?? DateUtils.getLastDayOfCurrentMonth()),
@@ -37,7 +38,7 @@ class Calendar extends StatefulWidget {
         super(key: key) {
     startDayOffset = this.startDate.weekday - DateTime.monday;
     if (this.startDate.isAfter(this.endDate)) {
-      throw ArgumentError("Calendarro: startDate is after the endDate");
+      throw ArgumentError("Calendar: startDate is after the endDate");
     }
   }
 
@@ -48,18 +49,17 @@ class Calendar extends StatefulWidget {
 }
 
 class CalendarState extends State<Calendar> {
-  DateTime? _selectedSingleDate;
-  late double _availableHeight;
-  int _maxWeeksNumber = 5;
-  int? _pagesCount;
-  PageView? _pageView;
-  late DateTime _month;
+  List<DateTime> _selectedDates = [];
+  int _maxWeeksNumber = 6;
+  late int _startDayOffset = _startDate.weekday - DateTime.monday;
+  late DateTime _startDate;
+  late DateTime _endDate;
 
   @override
   void initState() {
     super.initState();
-    _month = widget.startDate;
-    _selectedSingleDate ??= widget.startDate;
+    _startDate = widget.startDate;
+    _endDate = widget.endDate;
   }
 
   void setSelectedDate(DateTime date) {
@@ -70,102 +70,103 @@ class CalendarState extends State<Calendar> {
     } else {
       widget.selectedDates.add(date);
     }
-  }
-
-  void setCurrentDate(DateTime date) {
     setState(() {
-      int page = widget.getPageForDate(date);
-      _pageView?.controller.jumpToPage(page);
+      _selectedDates = widget.selectedDates;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    _pagesCount = DateUtils.calculateMonthsDifference(widget.startDate, widget.endDate) + 1;
-    final selectedDate = _selectedSingleDate;
-    _pageView = PageView.builder(
-      itemBuilder: (context, position) => Column(
-        children: [
-          _Month(date: _month, height: widget.monthLabelHeight),
-          _buildCalendarPageInMonthsMode(position),
-        ],
-      ),
-      itemCount: _pagesCount,
-      controller: PageController(
-          initialPage:
-          selectedDate != null ? widget.getPageForDate(selectedDate) : 0),
-      onPageChanged: (page) {
-        if (widget.onPageSelected != null) {
-          DateRange pageDateRange = _calculatePageDateRangeInMonthsMode(page);
-          widget.onPageSelected?.call(pageDateRange.startDate, pageDateRange.endDate);
-          setState(() {
-            _month = pageDateRange.startDate;
-          });
-        }
-      },
-    );
-
-     _availableHeight = MediaQuery.of(context).size.height -
+     final availableHeight = MediaQuery.of(context).size.height -
         AppBar().preferredSize.height -
         widget.dayLabelHeight -
         MediaQuery.of(context).padding.top -
         MediaQuery.of(context).padding.bottom;
      _maxWeeksNumber = DateUtils.calculateMaxWeeksNumberMonthly(
-        widget.startDate,
-        widget.endDate,
+        _startDate,
+        _endDate,
      );
+
     return Container(
       color: Colors.blueGrey,
-      height: _availableHeight,
-      child: _pageView,
+      height: availableHeight,
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+        InkWell(
+          onTap: () {
+            final firstDayPreviousMonth = DateUtils.getFirstDayOfPreviousMonth(_startDate);
+            final lastDayPreviousMonth = DateUtils.getLastDayOfPreviousMonth(_startDate);
+            setState(() {
+              _startDate = firstDayPreviousMonth;
+              _endDate = lastDayPreviousMonth;
+              _startDayOffset = _startDate.weekday - DateTime.monday;
+              _maxWeeksNumber = DateUtils.calculateMaxWeeksNumberMonthly(
+                _startDate,
+                _endDate,
+              );
+            });
+            widget.onMonthSelected?.call(
+              firstDayPreviousMonth.add(Duration(days: - _startDayOffset)),
+              lastDayPreviousMonth.add(Duration(days: (_maxWeeksNumber * 7 - _startDayOffset - lastDayPreviousMonth.day))),
+            );
+          },
+          customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            color: Colors.white,
+            width: widget.navigationButtonWidth,
+            height: (availableHeight - widget.dayLabelHeight - widget.monthLabelHeight)/_maxWeeksNumber * 1.5,
+            child: const Center(child: Text('prev', textAlign: TextAlign.center,))),
+          ),
+        SizedBox(
+            width: MediaQuery.of(context).size.width - widget.navigationButtonWidth * 2 - 40,
+            child: Column(
+              children: [
+                _Month(date: _startDate, height: widget.monthLabelHeight),
+                _CalendarPage(
+                  pageStartDate: _startDate,
+                  pageEndDate: _endDate,
+                  weekdayLabelsRow: CalendarWeekdayLabelsView(height: widget.dayLabelHeight),
+                  dayItemHeight: (availableHeight - widget.dayLabelHeight - widget.monthLabelHeight)/_maxWeeksNumber,
+                  selectedDates: _selectedDates,
+                  startDayOffset: _startDayOffset,
+                  onTap: (date) {
+                    widget.onTap?.call(date);
+                    setSelectedDate(date);
+                  },
+                ),
+              ],
+            ),
+        ),
+          InkWell(
+            onTap: ()  {
+              final firstDayNextMonth = DateUtils.getFirstDayOfNextMonth(_startDate);
+              final lastDayNextMonth = DateUtils.getLastDayOfNextMonth(_startDate);
+              setState(() {
+                _startDate = firstDayNextMonth;
+                _endDate = lastDayNextMonth;
+                _startDayOffset = _startDate.weekday - DateTime.monday;
+                _maxWeeksNumber = DateUtils.calculateMaxWeeksNumberMonthly(
+                  _startDate,
+                  _endDate,
+                );
+              });
+              print("thanh_max week: $_maxWeeksNumber");
+              widget.onMonthSelected?.call(
+                firstDayNextMonth.add(Duration(days: - _startDayOffset)),
+                lastDayNextMonth.add(Duration(days: (_maxWeeksNumber * 7 - _startDayOffset - lastDayNextMonth.day))),
+              );
+            },
+            customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Container(
+                margin: EdgeInsets.symmetric(horizontal: 10),
+                color: Colors.white,
+                width: widget.navigationButtonWidth,
+                height: (availableHeight - widget.dayLabelHeight - widget.monthLabelHeight)/_maxWeeksNumber * 1.5,
+                child: const Center(child: Text('next', textAlign: TextAlign.center,))),
+          ),
+      ],),
     );
-  }
-
-  Widget _buildCalendarPageInMonthsMode(int position) {
-    DateRange pageDateRange = _calculatePageDateRangeInMonthsMode(position);
-    return _CalendarPage(
-      pageStartDate: pageDateRange.startDate,
-      pageEndDate: pageDateRange.endDate,
-      weekdayLabelsRow: CalendarWeekdayLabelsView(height: widget.dayLabelHeight),
-      dayItemHeight: (_availableHeight - widget.dayLabelHeight - widget.monthLabelHeight)/_maxWeeksNumber,
-      selectedDates: widget.selectedDates,
-      onTap: (date) {
-        widget.onTap?.call(date);
-        setSelectedDate(date);
-        setCurrentDate(date);
-      },
-    );
-  }
-
-  DateRange _calculatePageDateRangeInMonthsMode(int pagePosition) {
-    final count = _pagesCount;
-    if (count == null) {
-      throw StateError('pagesCount is null');
-    }
-
-    DateTime pageStartDate;
-    DateTime pageEndDate;
-
-    if (pagePosition == 0) {
-      pageStartDate = widget.startDate;
-      if (count <= 1) {
-        pageEndDate = widget.endDate;
-      } else {
-        var lastDayOfMonth = DateUtils.getLastDayOfMonth(widget.startDate);
-        pageEndDate = lastDayOfMonth;
-      }
-    } else if (pagePosition == count - 1) {
-      pageStartDate = DateUtils.getFirstDayOfMonth(widget.endDate);
-      pageEndDate = widget.endDate;
-    } else {
-      DateTime firstDateOfCurrentMonth = DateUtils.addMonths(
-          widget.startDate,
-          pagePosition);
-      pageStartDate = firstDateOfCurrentMonth;
-      pageEndDate = DateUtils.getLastDayOfMonth(firstDateOfCurrentMonth);
-    }
-
-    return DateRange(pageStartDate, pageEndDate);
   }
 }
 
@@ -181,22 +182,22 @@ class _CalendarPage extends StatelessWidget {
   final List<DateTime> selectedDates;
   final DateTimeCallback? onTap;
 
-  _CalendarPage({
-    Key? key,
+  const _CalendarPage({
     required this.pageStartDate,
     required this.pageEndDate,
     required this.weekdayLabelsRow,
     required this.dayItemHeight,
     required this.selectedDates,
+    required this.startDayOffset,
     this.onTap,
-  }) : startDayOffset = pageStartDate.weekday - DateTime.monday, super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
         color: Colors.blueGrey,
         child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
             children: buildRows(
                 dayItemHeight: dayItemHeight,
                 selectedDates: selectedDates,
@@ -217,8 +218,7 @@ class _CalendarPage extends StatelessWidget {
     DateTime rowLastDayDate = DateUtils.addDaysToDate(pageStartDate, 6 - startDayOffset);
 
     if (pageEndDate.isAfter(rowLastDayDate)) {
-      rows.add(Row(
-          children: buildCalendarRow(
+      rows.add(Row(children: buildCalendarRow(
         rowStartDate: pageStartDate.add(Duration(days: -startDayOffset)),
         rowEndDate: rowLastDayDate,
         dayItemHeight: dayItemHeight,
@@ -356,7 +356,7 @@ class _CalendarDayItem extends StatelessWidget {
               decoration: boxDecoration,
               child: Center(
                   child: Text(
-                    "${date.day} \n 通常営業",
+                    "${date.day} \n text custom",
                     textAlign: TextAlign.center,
                     style: TextStyle(color: textColor),
                   ))),
